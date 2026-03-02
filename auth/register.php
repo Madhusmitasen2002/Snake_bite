@@ -1,79 +1,49 @@
 <?php
 header("Content-Type: application/json");
-
+require_once __DIR__ . '/../config/cors.php';
 include '../db.php';
 include '../helpers.php';
-
+$data = json_decode(file_get_contents("php://input"), true);
 // inputs
-$name = $_POST['name'] ?? null;
-$email = $_POST['email'] ?? null;
-$password = $_POST['password'] ?? null;
-$role = $_POST['role'] ?? 'community';
+$name = $data['name'] ?? null;
+$email = $data['email'] ?? null;
+$password = $data['password'] ?? null;
+$role ="community"; // default role
 
 if (!$name || !$email || !$password) {
     error("All fields required");
 }
 
-// allowed roles
-$all_roles = [
-    'community',
-    'chw',
-    'treatment_provider',
-    'programme_manager',
-    'admin'
-];
 
-if (!in_array($role, $all_roles)) {
-    error("Invalid role");
-}
+// check if the user already exists
+$stmt = $conn->prepare("SELECT * FROM users WHERE email=?");
+$stmt->bind_param("s", $email);
+$stmt->execute();
 
-# ✅ BOOTSTRAP (FIRST ADMIN FIX)
+$result = $stmt->get_result();
 
-// check if admin exists
-$checkAdmin = $conn->query("SELECT id FROM users WHERE role = 'admin'");
-
-if ($checkAdmin->num_rows == 0) {
-    // first user becomes admin automatically
-    $role = 'admin';
-} else {
-
-    # 🔒 ROLE SECURITY
-
-    if ($role != 'community') {
-
-        include '../middleware/auth.php';
-        $creator_id = validateToken();
-
-        $stmt = $conn->prepare("SELECT role FROM users WHERE id = ?");
-        $stmt->bind_param("i", $creator_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-
-        if ($res->num_rows == 0) {
-            error("Invalid creator");
-        }
-
-        $creator_role = $res->fetch_assoc()['role'];
-
-        if ($creator_role != 'admin') {
-            error("Only admin can create this role");
-        }
-    }
-}
+if ($result->num_rows > 0) {
+    error("User already exists");
+}   
 
 // hash password
 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
 // insert user
 $stmt = $conn->prepare("
-INSERT INTO users (name, email, password, role)
+INSERT INTO users (name, email, password,role)
 VALUES (?, ?, ?, ?)
 ");
 
-$stmt->bind_param("ssss", $name, $email, $hashedPassword, $role);
+$stmt->bind_param("ssss", $name, $email, $hashedPassword, $role );
 
 if ($stmt->execute()) {
-    success("User registered", ["role" => $role]);
+    success("User registered",[
+        "user_id" => $stmt->insert_id,
+        "name" => $name,
+        "email" => $email,
+        "role" => $role
+    ]);
 } else {
     error("Registration failed");
 }

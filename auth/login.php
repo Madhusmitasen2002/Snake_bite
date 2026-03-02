@@ -8,12 +8,16 @@ include '../helpers.php';
 
 use Firebase\JWT\JWT;
 
-$email = $_POST['email'] ?? null;
-$password = $_POST['password'] ?? null;
+$data = json_decode(file_get_contents("php://input"), true);
+
+$email = $data['email'] ?? null;
+$password = $data['password'] ?? null;
+
 
 if (!$email || !$password) {
     error("Email and password required");
 }
+
 
 $stmt = $conn->prepare("SELECT * FROM users WHERE email=?");
 $stmt->bind_param("s", $email);
