@@ -39,6 +39,7 @@ if (!password_verify($password, $user['password'])) {
 $key = $_ENV['JWT_SECRET'];
 
 $payload = [
+    "name" => $user['name'],
     "user_id" => $user['id'],
     "role" => $user['role'],
     "iat" => time(),
@@ -48,6 +49,7 @@ $payload = [
 $jwt = JWT::encode($payload, $key, 'HS256');
 
 success("Login success", [
+    "name" => $user['name'],
     "token" => $jwt,
     "user_id" => $user['id'],
     "role" => $user['role']
