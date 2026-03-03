@@ -6,6 +6,19 @@ require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 include '../db.php';
+if (!$conn) {
+    die(json_encode([
+        "status" => false,
+        "message" => "DB connection is null"
+    ]));
+}
+
+if ($conn->connect_error) {
+    die(json_encode([
+        "status" => false,
+        "message" => $conn->connect_error
+    ]));
+}
 include '../helpers.php';
 
 use Firebase\JWT\JWT;
