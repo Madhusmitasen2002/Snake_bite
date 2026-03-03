@@ -6,8 +6,10 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     && docker-php-ext-install mysqli
 
-# 🔥 FORCE FIX MPM
-RUN rm -f /etc/apache2/mods-enabled/mpm_* \
+# 🔥 HARD RESET Apache MPM (actual fix)
+RUN a2dismod mpm_event || true \
+ && a2dismod mpm_worker || true \
+ && a2dismod mpm_prefork || true \
  && a2enmod mpm_prefork
 
 RUN a2enmod rewrite
