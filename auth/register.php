@@ -13,8 +13,6 @@ $role ="community"; // default role
 if (!$name || !$email || !$password) {
     error("All fields required");
 }
-
-
 // check if the user already exists
 $stmt = $conn->prepare("SELECT * FROM users WHERE email=?");
 $stmt->bind_param("s", $email);
