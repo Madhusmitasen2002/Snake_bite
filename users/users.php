@@ -89,6 +89,29 @@ if ($action === "get") {
 
 /*
 =======================================
+Delete USER
+=======================================
+*/
+if ($action === "delete") {
+ $data = json_decode(file_get_contents("php://input"), true);
+    if (!isset($data['id'])) {
+        response(false, "User ID required");
+    }
+
+    $id = intval($data['id']);
+
+    $stmt = $conn->prepare("DELETE FROM users WHERE id=?");
+    $stmt->bind_param("i", $id);
+
+    if ($stmt->execute()) {
+        response(true, "User deleted successfully");
+    } else {
+        response(false, "Deletion failed");
+    }
+}
+
+/*
+=======================================
 UPDATE USER
 =======================================
 */
@@ -101,14 +124,54 @@ if ($action === "update") {
     }
 
     $id = intval($data['id']);
-    $name = $data['name'] ?? null;
+
+    $editorId = $data['editorId'] ?? null;
+    if (!$editorId) {
+        response(false, "Editor ID required");
+    }
+    // Check if user exists
+    $stmt = $conn->prepare("SELECT role FROM users WHERE id=?");
+    $stmt->bind_param("i", $editorId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $user = $result->fetch_assoc();
+
+    if (!$user) {
+        response(false, "User not found");
+    }
+    if($user['role'] !== 'admin' && $user['role'] !== 'community'){
+        response(false, "Only admins/Community members can assign admin role");
+    }   
+
+    $name         = $data['name'] ?? null;
+    $newRole      = $data['role'] ?? null;
+    $phone_number = $data['phone_number'] ?? null;
+    $address      = $data['address'] ?? null;
+    $district     = $data['district'] ?? null;
 
     if (!$name) {
         response(false, "Name cannot be empty");
     }
 
-    $stmt = $conn->prepare("UPDATE users SET name=? WHERE id=?");
-    $stmt->bind_param("si", $name, $id);
+    if ($phone_number && !preg_match('/^\d{10}$/', $phone_number)) {
+        response(false, "Invalid phone number");
+    }
+
+
+    $stmt = $conn->prepare(
+        "UPDATE users 
+         SET name=?, role=?, phone_number=?, address=?, district=? 
+         WHERE id=?"
+    );
+
+    $stmt->bind_param("sssssi", 
+        $name, 
+        $newRole, 
+        $phone_number, 
+        $address, 
+        $district, 
+        $id
+    );
 
     if ($stmt->execute()) {
         response(true, "User updated successfully");
@@ -116,7 +179,6 @@ if ($action === "update") {
         response(false, "Update failed");
     }
 }
-
 /*
 =======================================
 VERIFY USER (Admin Use)
