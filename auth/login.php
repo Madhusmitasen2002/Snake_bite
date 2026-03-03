@@ -1,4 +1,6 @@
 <?php
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
 header("Content-Type: application/json");
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -36,7 +38,7 @@ if (!password_verify($password, $user['password'])) {
 }
 
 // 🔐 REAL JWT
-$key = $_ENV['JWT_SECRET'];
+$key = getenv('JWT_SECRET');
 
 $payload = [
     "name" => $user['name'],
