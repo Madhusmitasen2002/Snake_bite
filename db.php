@@ -3,11 +3,11 @@
 require_once __DIR__ . '/config/env.php';
 
 $conn = new mysqli(
-    getenv()['DB_HOST'],
-    getenv()['DB_USER'],
-    getenv()['DB_PASS'],
-    getenv()['DB_NAME'],
-    getenv()['DB_PORT'] // <-- IMPORTANT
+    getenv('DB_HOST'),
+    getenv('DB_USER'),
+    getenv('DB_PASS'),
+    getenv('DB_NAME'),
+    getenv('DB_PORT')
 );
 if ($conn->connect_error) {
     die(json_encode([
