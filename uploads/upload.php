@@ -7,13 +7,15 @@ require_once __DIR__ . '/../config/cloudinary.php';
 
 use Cloudinary\Api\Upload\UploadApi;
 
-if (!isset($_FILES['image'])) {
+$allowed = ['image/jpeg','image/png','image/jpg'];
+
+if (!in_array($_FILES['image']['type'], $allowed)) {
     echo json_encode([
-        "status" => false,
-        "message" => "No file provided"
+        "status"=>false,
+        "message"=>"Invalid file type"
     ]);
     exit;
-}
+} 
 
 $tmp = $_FILES['image']['tmp_name'];
 
