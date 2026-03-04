@@ -1,6 +1,5 @@
 <?php
-var_dump(getenv('CLOUDINARY_API_KEY'));
-exit;
+
 header("Content-Type: application/json");
 
 require_once __DIR__ . '/../config/cors.php';
