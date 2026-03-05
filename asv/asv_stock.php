@@ -13,6 +13,80 @@ function response($success, $message, $data = null) {
     exit();
 }
 
+/**
+ * Helper function to create notification
+ */
+function createNotification($conn, $user_id, $title, $message, $related_case_id = null) {
+    $stmt = $conn->prepare(
+        "INSERT INTO notifications (user_id, title, message, related_case_id, is_read, created_at) 
+         VALUES (?, ?, ?, ?, 0, NOW())"
+    );
+    
+    if (!$stmt) {
+        return false;
+    }
+    
+    $stmt->bind_param("issi", $user_id, $title, $message, $related_case_id);
+    $result = $stmt->execute();
+    $stmt->close();
+    
+    return $result;
+}
+
+/**
+ * Helper function to get all non-community users
+ * Returns: admin, chw, treatment_provider, programme_manager
+ */
+function getNonCommunityUsers($conn) {
+    $stmt = $conn->prepare(
+        "SELECT id, name, role FROM users WHERE role IN ('admin', 'chw', 'treatment_provider', 'programme_manager')"
+    );
+    
+    if (!$stmt) {
+        return [];
+    }
+    
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $users = [];
+    
+    while ($row = $result->fetch_assoc()) {
+        $users[] = [
+            'id' => intval($row['id']),
+            'name' => $row['name'],
+            'role' => $row['role']
+        ];
+    }
+    
+    $stmt->close();
+    return $users;
+}
+
+/**
+ * Helper function to get hospital details
+ */
+function getHospitalDetails($conn, $hospital_id) {
+    $stmt = $conn->prepare("SELECT id, name, district FROM hospitals WHERE id = ?");
+    
+    if (!$stmt) {
+        return null;
+    }
+    
+    $stmt->bind_param("i", $hospital_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows === 0) {
+        $stmt->close();
+        return null;
+    }
+    
+    $hospital = $result->fetch_assoc();
+    $stmt->close();
+    
+    return $hospital;
+}
+
 $action = $_GET['action'] ?? '';
 
 if (!$action) {
@@ -34,19 +108,19 @@ if ($action === "getAll") {
 
     $stmt = $conn->prepare(
         "SELECT
-    h.id as hospital_id,
-    h.name as hospital,
-    h.address,
-    h.district,
-    h.contact_number,
-    COALESCE(a.available_quantity,0) as available_quantity,
-    a.id,
-    a.updated_at,
-    a.updated_by
-FROM hospitals h
-LEFT JOIN asv_stock a ON a.hospital_id = h.id
-ORDER BY a.updated_at DESC
-LIMIT ? OFFSET ?"
+            h.id as hospital_id,
+            h.name as hospital,
+            h.address,
+            h.district,
+            h.contact_number,
+            COALESCE(a.available_quantity,0) as available_quantity,
+            a.id,
+            a.updated_at,
+            a.updated_by
+        FROM hospitals h
+        LEFT JOIN asv_stock a ON a.hospital_id = h.id
+        ORDER BY a.updated_at DESC
+        LIMIT ? OFFSET ?"
     );
 
     if (!$stmt) {
@@ -97,21 +171,11 @@ if ($action === "create") {
         response(false, "Quantity cannot be negative");
     }
 
-    // Check if hospital exists
-    $checkStmt = $conn->prepare("SELECT id FROM hospitals WHERE id = ?");
-    if (!$checkStmt) {
-        response(false, "Database error");
-    }
-
-    $checkStmt->bind_param("i", $hospital_id);
-    $checkStmt->execute();
-    $checkResult = $checkStmt->get_result();
-
-    if ($checkResult->num_rows === 0) {
+    // Get hospital details
+    $hospital = getHospitalDetails($conn, $hospital_id);
+    if (!$hospital) {
         response(false, "Hospital not found");
     }
-
-    $checkStmt->close();
 
     // Check if stock already exists
     $existStmt = $conn->prepare("SELECT id FROM asv_stock WHERE hospital_id = ?");
@@ -142,8 +206,33 @@ if ($action === "create") {
     $stmt->bind_param("iii", $hospital_id, $available_quantity, $updated_by);
 
     if ($stmt->execute()) {
+        $asv_stock_id = $conn->insert_id;
         $stmt->close();
-        response(true, "ASV stock created successfully", ["id" => $conn->insert_id]);
+
+        // 🔔 Get all non-community users
+        $users = getNonCommunityUsers($conn);
+
+        if (!empty($users)) {
+            $notificationTitle = "🏥 New ASV Stock Registered";
+            $notificationMessage = "A new hospital '" . $hospital['name'] . "' in " . $hospital['district'] . " district has been registered for ASV stock management with initial stock of " . $available_quantity . " vials.";
+
+            // Create notification for each non-community user
+            foreach ($users as $user) {
+                createNotification(
+                    $conn,
+                    $user['id'],
+                    $notificationTitle,
+                    $notificationMessage,
+                    $asv_stock_id
+                );
+            }
+        }
+
+        response(true, "ASV stock created successfully. Notifications sent to all staff.", [
+            "id" => $asv_stock_id,
+            "hospital_id" => $hospital_id,
+            "notifications_sent" => count($users)
+        ]);
     } else {
         response(false, "Creation failed: " . $stmt->error);
     }
@@ -164,6 +253,7 @@ if ($action === "update") {
     $id = intval($data['id']);
     $quantity_change = intval($data['quantity_change'] ?? 0);
     $updated_by = intval($data['updated_by'] ?? 0);
+    $notes = trim($data['notes'] ?? '');
 
     if (!$updated_by) {
         response(false, "Updated by (user ID) is required");
@@ -173,8 +263,14 @@ if ($action === "update") {
         response(false, "Quantity change cannot be zero");
     }
 
-    // Get current quantity
-    $checkStmt = $conn->prepare("SELECT available_quantity FROM asv_stock WHERE id = ?");
+    // Get current quantity and hospital info
+    $checkStmt = $conn->prepare(
+        "SELECT a.available_quantity, a.hospital_id, h.name as hospital_name, h.district 
+         FROM asv_stock a
+         LEFT JOIN hospitals h ON a.hospital_id = h.id
+         WHERE a.id = ?"
+    );
+    
     if (!$checkStmt) {
         response(false, "Database error");
     }
@@ -212,6 +308,27 @@ if ($action === "update") {
 
     if ($stmt->execute()) {
         $stmt->close();
+
+        // 🔔 Send low stock alert if quantity drops below 50
+        if ($newQuantity < 50 && $stock['available_quantity'] >= 50) {
+            $adminUsers = getNonCommunityUsers($conn);
+            
+            if (!empty($adminUsers)) {
+                $alertTitle = "⚠️ Low ASV Stock Alert";
+                $alertMessage = "ASV stock at " . $stock['hospital_name'] . " (" . $stock['district'] . ") has dropped to " . $newQuantity . " vials. Please replenish stock.";
+
+                foreach ($adminUsers as $user) {
+                    createNotification(
+                        $conn,
+                        $user['id'],
+                        $alertTitle,
+                        $alertMessage,
+                        $id
+                    );
+                }
+            }
+        }
+
         response(true, "ASV stock updated successfully", [
             "id" => $id,
             "new_quantity" => $newQuantity,
